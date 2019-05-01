@@ -1,5 +1,6 @@
 fn main() {
-    day1::run("inputs/day1.txt");
+    //    day1::run("inputs/day1.txt");
+    day2::run("inputs/day2.txt");
 }
 
 mod utils {
@@ -48,5 +49,83 @@ pub mod day1 {
             idx = (idx + 1) % size;
         }
         acc
+    }
+}
+
+pub mod day2 {
+    use crate::utils::read_lines;
+    use hashbrown::{HashMap, HashSet};
+
+    struct Count {
+        twos: u16,
+        threes: u16,
+    }
+
+    pub fn run(filename: &str) {
+        let box_ids = read_lines(filename);
+        let checksum = day2_checksum(&box_ids);
+        println!("Checksum is {}", checksum);
+
+        let same_letters = day2_findboxes(&box_ids);
+        println!("Common letters are {}", same_letters);
+    }
+
+    fn day2_checksum(box_ids: &Vec<String>) -> u16 {
+        let mut count = Count { twos: 0, threes: 0 };
+        for box_id in box_ids {
+            let occurrences: HashMap<char, u32> =
+                box_id.chars().fold(HashMap::new(), |mut map, ch| {
+                    map.insert(ch, map.get(&ch).map(|v| v + 1).unwrap_or(1));
+                    map
+                });
+            let counts: HashSet<&u32> = occurrences.values().collect();
+            if counts.contains(&2) {
+                count.twos += 1;
+            };
+            if counts.contains(&3) {
+                count.threes += 1;
+            };
+        }
+
+        count.twos * count.threes
+    }
+
+    fn day2_findboxes(box_ids: &Vec<String>) -> String {
+        let mut matching: String = String::new();
+        let mut ppos = 0;
+
+        for (idx, box_id) in box_ids.iter().enumerate() {
+            let others = &box_ids[(idx + 1)..];
+
+            match find_match(box_id, others) {
+                Some((_, pos)) => {
+                    matching = box_id.clone();
+                    ppos = pos;
+                    break;
+                }
+                None => (),
+            };
+        }
+
+        String::from(&matching[0..ppos]) + &String::from(&matching[(ppos + 1)..])
+    }
+
+    fn find_match(box_id: &String, others: &[String]) -> Option<(String, usize)> {
+        let self_chars = box_id.chars();
+        let mut matched = None;
+        for other in others {
+            let similarities: Vec<bool> = self_chars
+                .clone()
+                .zip(other.chars())
+                .map(|(ch1, ch2)| ch1 == ch2)
+                .collect();
+            let diffs: Vec<&bool> = similarities.iter().filter(|b| !**b).collect();
+            if diffs.len() == 1 {
+                let pos = similarities.iter().position(|b| !b).unwrap();
+                matched = Some((other.clone(), pos));
+                break;
+            }
+        }
+        matched
     }
 }
