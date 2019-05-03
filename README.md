@@ -3,6 +3,6 @@ My solutions, in Rust, for the Advent Of Code 2018
 
 Everything is located on the  main file, inputs are in the... `inputs` folder :D
 
-If it's here, it runs.
+If it's here, it runs --> `cargo run`
 
 Using rust v1.34.0 (current stable)
