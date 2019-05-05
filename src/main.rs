@@ -1,10 +1,13 @@
 #[macro_use]
 extern crate lazy_static;
+extern crate chrono;
+extern crate regex;
 
 fn main() {
     //    day1::run("inputs/day1.txt");
     //    day2::run("inputs/day2.txt");
-    day3::run("inputs/day3.txt");
+    //    day3::run("inputs/day3.txt");
+    day4::run("inputs/day4.txt");
 }
 
 mod utils {
@@ -16,6 +19,10 @@ mod utils {
             .lines()
             .map(|line: &str| String::from(line))
             .collect()
+    }
+
+    pub fn to_int(l: &str) -> i32 {
+        l.parse::<i32>().unwrap()
     }
 }
 
@@ -135,9 +142,7 @@ pub mod day2 {
 }
 
 pub mod day3 {
-    extern crate regex;
-
-    use crate::utils::read_lines;
+    use crate::utils::{read_lines, to_int};
     use hashbrown::{HashMap, HashSet};
     use regex::Regex;
 
@@ -191,7 +196,6 @@ pub mod day3 {
         }
 
         fn parse(s: &String) -> Claim {
-            let to_int = |l: &str| l.parse::<i32>().unwrap();
             let mut c = Claim::new();
             for cap in RE.captures_iter(s) {
                 c = Claim {
@@ -323,5 +327,233 @@ pub mod day3 {
 
         assert_eq!(Point::new(7, 2), tr2);
         assert_eq!(Point::new(4, 5), bl2);
+    }
+}
+
+pub mod day4 {
+    use crate::day4::EventType::{FallsAsleep, ShiftStart, WakesUp};
+    use crate::utils::{read_lines, to_int};
+    use chrono::offset::TimeZone;
+    use chrono::{DateTime, Timelike, Utc};
+    use hashbrown::HashMap;
+    use regex::Regex;
+    use std::str::FromStr;
+
+    lazy_static! {
+        static ref EVENT_REGEX: Regex = Regex::new(r"\[(.+)\] (.+)").unwrap();
+    }
+
+    lazy_static! {
+        static ref GUARD_REGEX: Regex = Regex::new(r"Guard #(\d+).*").unwrap();
+    }
+
+    enum EventType {
+        ShiftStart { id: u32 },
+        FallsAsleep,
+        WakesUp,
+    }
+
+    impl FromStr for EventType {
+        type Err = String;
+
+        fn from_str(content: &str) -> Result<Self, Self::Err> {
+            let mut et = WakesUp;
+            let words: Vec<&str> = content.split(" ").collect();
+            match words[0] {
+                "Guard" => {
+                    for matches in GUARD_REGEX.captures_iter(&content) {
+                        et = ShiftStart {
+                            id: to_int(&matches[1]) as u32,
+                        };
+                    }
+                }
+                "wakes" => et = WakesUp,
+                _ => et = FallsAsleep,
+            }
+            Ok(et)
+        }
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Event {
+        dt: DateTime<Utc>,
+        content: String,
+    }
+
+    impl Event {
+        const TIME_FMT: &'static str = "%Y-%m-%d %H:%M";
+    }
+
+    impl FromStr for Event {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let mut evt = None;
+            for res in EVENT_REGEX.captures_iter(s) {
+                evt = Some(Event {
+                    dt: Utc.datetime_from_str(&res[1], Event::TIME_FMT).unwrap(),
+                    content: res[2].to_string(),
+                });
+            }
+            evt.map(|e| Ok(e))
+                .unwrap_or(Err("dipshit".to_string() as Self::Err))
+        }
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Guard {
+        id: u32,
+        total_slept: u32,
+        schedule: HashMap<u32, u32>,
+    }
+
+    impl Guard {
+        fn new(id: u32) -> Guard {
+            Guard {
+                id,
+                total_slept: 0,
+                schedule: HashMap::new(),
+            }
+        }
+
+        /// Increments counts of minutes where this guard slept
+        /// from (included) to to (excluded)
+        fn slept(&mut self, from: u32, to: u32) {
+            self.total_slept += to - from;
+            for minute in from..to {
+                self.schedule.insert(
+                    minute,
+                    self.schedule.get(&minute).map(|m| m + 1).unwrap_or(1),
+                );
+            }
+        }
+
+        /// Returns a tuple (minute, times) that represents the minute the guard slept the most at
+        /// and the number of times he slept at this minute
+        /// If he slept an equal amount of times on several minutes, we take the highest minute
+        fn slept_most_at(&self) -> (u32, u32) {
+            if self.schedule.is_empty() {
+                (0, 0)
+            } else {
+                self.schedule.iter().map(|(&k, &v)| (v, k)).max().unwrap()
+            }
+        }
+    }
+
+    fn parse_events(filename: &str) -> Vec<Event> {
+        let mut events: Vec<Event> = read_lines(filename)
+            .iter()
+            .map(|st| Event::from_str(st.as_str()).unwrap())
+            .collect();
+        events.sort_by(|a, b| a.dt.cmp(&b.dt));
+        events
+    }
+
+    fn guards_with_schedule(events: &Vec<Event>) -> HashMap<u32, Guard> {
+        let mut guards = HashMap::new();
+        let mut current_id = 0;
+        let mut from: u32 = 0;
+
+        for event in events {
+            match EventType::from_str(event.content.as_str()).unwrap() {
+                ShiftStart { id } => {
+                    if !guards.contains_key(&id) {
+                        guards.insert(id, Guard::new(id));
+                    }
+                    current_id = id;
+                }
+                FallsAsleep => from = event.dt.minute(),
+                WakesUp => guards
+                    .get_mut(&current_id)
+                    .unwrap()
+                    .slept(from, event.dt.minute()),
+            }
+        }
+        guards
+    }
+
+    pub fn run(filename: &str) {
+        let events = parse_events(filename);
+        let guards = guards_with_schedule(&events);
+
+        println!(
+            "Code for first strategy is {} ",
+            day4_strat1(&guards.values().collect())
+        );
+
+        println!(
+            "Code for second strategy is {} ",
+            day4_strat2(&guards.values().collect())
+        );
+    }
+
+    fn day4_strat1(guards: &Vec<&Guard>) -> u32 {
+        let sleeper: &Guard = guards
+            .iter()
+            .max_by(|&g1, &g2| g1.total_slept.cmp(&g2.total_slept))
+            .unwrap();
+        let (_, minute) = sleeper.slept_most_at();
+        sleeper.id * minute
+    }
+
+    fn day4_strat2(guards: &Vec<&Guard>) -> u32 {
+        let (_, minute, sleeper) = guards
+            .iter()
+            .map(|&g| {
+                let (time, minute) = g.slept_most_at();
+                (time, minute, g)
+            })
+            .max_by(|t1, t2| t1.0.cmp(&t2.0))
+            .unwrap();
+        sleeper.id * minute
+    }
+
+    #[test]
+    fn test_event_parse() {
+        let i1 = "[1518-05-18 00:01] Guard #1171 begins shift";
+        let p1 = Event::from_str(i1);
+        let dt = Utc.ymd(1518, 05, 18).and_hms(0, 1, 0);
+
+        assert_eq!(
+            p1,
+            Ok(Event {
+                dt,
+                content: "Guard #1171 begins shift".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_guard_slept_most_at() {
+        let mut guard = Guard::new(0);
+
+        guard.slept(0, 10);
+        guard.slept(8, 10);
+
+        assert_eq!((2, 9), guard.slept_most_at())
+    }
+
+    #[test]
+    fn test_day4_strat1() {
+        let filename = "inputs/day4_test.txt";
+        let events = parse_events(&filename);
+        let guards = guards_with_schedule(&events);
+
+        let actual = day4_strat1(&guards.values().collect());
+        let expected = 240;
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_day4_strat2() {
+        let filename = "inputs/day4_test.txt";
+        let events = parse_events(&filename);
+        let guards = guards_with_schedule(&events);
+
+        let actual = day4_strat2(&guards.values().collect());
+        let expected = 4455;
+
+        assert_eq!(expected, actual);
     }
 }
