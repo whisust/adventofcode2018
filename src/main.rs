@@ -132,7 +132,7 @@ pub mod day2 {
                 .collect();
             let diffs: Vec<&bool> = similarities.iter().filter(|b| !**b).collect();
             if diffs.len() == 1 {
-                let pos = similarities.iter().position(|b| !b).unwrap();
+                let pos = similarities.iter().position(|b| !*b).unwrap();
                 matched = Some((other.clone(), pos));
                 break;
             }
